@@ -2,7 +2,7 @@
 
 osu!mania 谱面游玩预览插件，基于 [tosu](https://github.com/tosuapp/tosu)。在选歌界面实时显示类似于实际游玩时的下落式音符预览动画。
 
-![Preview](https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=osu!mania%20gameplay%20style%20beatmap%20preview%20with%20falling%20notes%2C%20dark%20theme%2C%20vertical%20layout%2C%204-key%20columns%20with%20purple%20notes%20falling%20downward%2C%20judgment%20line%20at%20bottom%2C%20retro%20gaming%20aesthetic&image_size=landscape_16_9)
+![Preview](https://i.ibb.co/Mkb3MHhr/2026-08-03-233857.png)
 
 ## 功能
 
