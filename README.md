@@ -71,3 +71,5 @@ A: 在 OBS 中添加"浏览器"源，URL 填写 `http://127.0.0.1:24050/Beatmap_
 ## 致谢
 
 - [tosu](https://github.com/tosuapp/tosu) - osu! 内存读取与 WebSocket 服务
+
+碎碎念：石山来的
