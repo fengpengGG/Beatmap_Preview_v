@@ -1,0 +1,39 @@
+/*
+ * Beatmap Preview — portrait gameplay overlay
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: transparent;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* 容器填满视口，Canvas 自由拉伸 */
+#preview-container {
+    display: none;
+    width: 100%;
+    height: 100%;
+}
+
+#preview-container.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#gameplay-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 10px;
+    box-shadow:
+        0 10px 36px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.07);
+}

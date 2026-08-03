@@ -1,0 +1,114 @@
+[
+    {
+        "uniqueID": "canvasWidth",
+        "type": "number",
+        "title": "Canvas 宽度",
+        "description": "预览窗口宽度（px），默认 300",
+        "options": "",
+        "value": 300
+    },
+    {
+        "uniqueID": "canvasHeight",
+        "type": "number",
+        "title": "Canvas 高度",
+        "description": "预览窗口高度（px），默认 600",
+        "options": "",
+        "value": 600
+    },
+    {
+        "uniqueID": "showInMenu",
+        "type": "checkbox",
+        "title": "主菜单也显示",
+        "description": "开启后主菜单也会显示预览（默认仅在选歌界面）",
+        "options": "",
+        "value": false
+    },
+    {
+        "uniqueID": "showJudgmentLine",
+        "type": "checkbox",
+        "title": "显示判定线",
+        "description": "显示或隐藏判定线（默认显示）",
+        "options": "",
+        "value": true
+    },
+    {
+        "uniqueID": "noteStyle",
+        "type": "checkbox",
+        "title": "圆形音符",
+        "description": "关闭 = 圆角方块，开启 = 圆形（直径比轨道小 2px，LN 尾部削成半圆）",
+        "options": "",
+        "value": false
+    },
+    {
+        "uniqueID": "noteEffects",
+        "type": "checkbox",
+        "title": "音符特效",
+        "description": "开启 = 音符高光 + LN 渐变，关闭 = 纯色，默认开启",
+        "options": "",
+        "value": true
+    },
+    {
+        "uniqueID": "noteThickness",
+        "type": "number",
+        "title": "音符厚度",
+        "description": "音符高度（px），默认 20",
+        "options": "",
+        "value": 20
+    },
+    {
+        "uniqueID": "speed",
+        "type": "number",
+        "title": "音符流速",
+        "description": "流速 1-40",
+        "options": "",
+        "value": 25
+    },
+    {
+        "description": "── 音符颜色设置 ──",
+        "uniqueID": "col1Color",
+        "type": "color",
+        "title": "轨道 1 音符颜色",
+        "options": "",
+        "value": "#c8c8eb"
+    },
+    {
+        "uniqueID": "col2Color",
+        "type": "color",
+        "title": "轨道 2 音符颜色",
+        "description": "",
+        "options": "",
+        "value": "#c8c8eb"
+    },
+    {
+        "uniqueID": "col3Color",
+        "type": "color",
+        "title": "轨道 3 音符颜色",
+        "description": "",
+        "options": "",
+        "value": "#c8c8eb"
+    },
+    {
+        "uniqueID": "col4Color",
+        "type": "color",
+        "title": "轨道 4 音符颜色",
+        "description": "",
+        "options": "",
+        "value": "#c8c8eb"
+    },
+    {
+        "uniqueID": "lnColor",
+        "type": "color",
+        "title": "长按音符 (LN) 颜色",
+        "description": "",
+        "options": "",
+        "value": "#9696c3"
+    },
+    {
+        "uniqueID": "debugLog",
+        "type": "checkbox",
+        "title": "调试日志",
+        "description": "控制台输出状态切换详细信息",
+        "options": "",
+        "value": false
+    }
+]
