@@ -60,6 +60,12 @@ socket.commands((data) => {
 function applySettings(msg) {
     if (!msg || typeof msg !== 'object') return;
     const num = (v, d) => Math.max(1, parseInt(v) || d);
+
+    // 需要重建 layout / colors / 动画的设置
+    const layoutKeys = ['canvasWidth', 'canvasHeight', 'speed'];
+    const colorKeys  = ['col1Color', 'col2Color', 'col3Color', 'col4Color', 'lnColor'];
+    const needsRebuild = [...layoutKeys, ...colorKeys].some(k => msg[k] !== undefined);
+
     if (msg.canvasWidth  !== undefined) settings.canvasWidth  = num(msg.canvasWidth,  300);
     if (msg.canvasHeight !== undefined) settings.canvasHeight = num(msg.canvasHeight, 600);
     if (msg.showInMenu   !== undefined) settings.showInMenu   = msg.showInMenu;
@@ -75,6 +81,18 @@ function applySettings(msg) {
     if (msg.noteStyle        !== undefined) settings.noteStyle        = msg.noteStyle;
     if (msg.noteEffects      !== undefined) settings.noteEffects      = msg.noteEffects;
     log('Settings applied', settings);
+
+    // 即时应用需要重建的设置（无需切换到下一首歌）
+    if (needsRebuild && cache.bm) {
+        canvas.width  = settings.canvasWidth;
+        canvas.height = settings.canvasHeight;
+        const { col1, col2, col3, col4, ln } = settings.colors;
+        cache.noteColors = [col1, col2, col3, col4];
+        cache.lnColors   = [ln, ln, ln, ln];
+        cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
+        cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
+        startAnimation();
+    }
 }
 
 // ============ UI ============
