@@ -5,6 +5,7 @@
  * Exports:
  *   buildPianoLayout(canvasW, canvasH, colCount) → layout
  *   buildRenderColors(noteColors, lnColors, colCount) → colors
+ *   buildHitIndex(hitObjects) → { starts, ends, lnEnds }
  *   renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, opts)
  */
 
@@ -55,6 +56,37 @@ export function buildRenderColors(noteColors, lnColors, colCount) {
     return { noteCols: nc, lnCols: lc };
 }
 
+/**
+ * 预建音符时间索引：{ starts, ends, lnEnds }
+ * 每个数组按时间升序排列，用于二分查找定位窗口范围。
+ */
+export function buildHitIndex(hitObjects) {
+    const starts = [], ends = [], lnEnds = [];
+    for (let i = 0; i < hitObjects.length; i++) {
+        const o = hitObjects[i];
+        starts.push({ t: o.time, x: o.x, type: o.type, endTime: o.endTime, idx: i });
+        if (o.type & 128 && o.endTime) {
+            ends.push(o.endTime);
+            lnEnds.push({ t: o.time, end: o.endTime, x: o.x, idx: i });
+        }
+    }
+    starts.sort((a, b) => a.t - b.t);
+    ends.sort((a, b) => a - b);
+    lnEnds.sort((a, b) => a.t - b.t);
+    return { starts, ends, lnEnds };
+}
+
+/** 二分查找：返回首个 >= t 的索引 */
+function bisectLeft(arr, t, key) {
+    let lo = 0, hi = arr.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if ((key ? arr[mid][key] : arr[mid]) < t) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
 // ═══════════════════════════════════════════════════════════════
 
 export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, opts = {}) {
@@ -79,9 +111,9 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
 
     // ── 精灵（离屏预渲染，缓存命中零开销） ──
     const noteSprites = isCircle
-        ? noteCols.map(c => useFx ? getCircleNoteSprite(c, circleD) : getFlatCircleSprite(c, circleD))
-        : noteCols.map(c => useFx ? getNoteSprite(c, nw, noteH) : getFlatNoteSprite(c, nw, noteH));
-    const lnSprites = lnCols.map(c => useFx ? getLnSprite(c, nw) : getFlatLnSprite(c, nw));
+        ? noteCols.map(c => getCircleNoteSprite(c, circleD, !useFx))
+        : noteCols.map(c => getNoteSprite(c, nw, noteH, !useFx));
+    const lnSprites = lnCols.map(c => getLnSprite(c, nw, !useFx));
 
     // ── 背景 ──
     const bgGrad = ctx.createLinearGradient(0, 0, 0, canvasH);
@@ -115,8 +147,11 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
     }
 
     // ── TP 红绿线 ──
-    for (const tp of bm.timingPoints) {
-        if (tp.time < windowStart || tp.time > windowEnd) continue;
+    const tps = bm.timingPoints;
+    const tpStart = bisectLeft(tps, windowStart, 'time');
+    const tpEnd   = bisectLeft(tps, windowEnd, 'time');
+    for (let ti = tpStart; ti < tpEnd; ti++) {
+        const tp = tps[ti];
         const y = pianoBottom - (tp.time - currentTimeMs) * scale;
         if (y < pianoTop || y > pianoBottom) continue;
 
@@ -138,14 +173,21 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
     }
 
     // ═══════════════════════════════════════════════════════════
-    // 音符 — 单次遍历分拣
+    // 音符 — 基于预建索引的窗口遍历
     // ═══════════════════════════════════════════════════════════
     const colCount = noteCols.length;
     const lnBodies = [], heads = [], lnTails = [];
     const lastHit  = new Array(colCount).fill(-Infinity);
     const held     = new Array(colCount).fill(false);
 
-    for (const obj of bm.hitObjects) {
+    const hitIdx = bm._hitIndex;
+    const objs   = bm.hitObjects;
+    const si     = bisectLeft(hitIdx.starts, windowStart, 't');
+    const ei     = bisectLeft(hitIdx.starts, windowEnd, 't');
+
+    // ── 主遍历：窗口内的下落音符 ──
+    for (let i = si; i < ei; i++) {
+        const obj = objs[hitIdx.starts[i].idx];
         const isLn = obj.type & 128;
         const col  = obj.x * colCount / 512 | 0;
         if (col >= colCount) continue;
@@ -153,46 +195,55 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
         if (obj.time <= currentTimeMs && obj.time > currentTimeMs - HIT_FLASH_MS) {
             if (obj.time > lastHit[col]) lastHit[col] = obj.time;
         }
-        if (isLn && obj.endTime && obj.time <= currentTimeMs && obj.endTime > currentTimeMs) {
-            held[col] = true;
-        }
 
-        // LN 身体：从当前时间到尾部，一直延伸到判定线
-        if (isLn && obj.endTime && obj.endTime > currentTimeMs && obj.time < windowEnd) {
-            const yT = Math.max(pianoTop, pianoBottom - (Math.min(obj.endTime, windowEnd) - currentTimeMs) * scale);
-            const rawB = pianoBottom - (Math.max(obj.time, currentTimeMs) - currentTimeMs) * scale;
+        // LN 身体（仅下落阶段，已按住的由 held pass 处理）
+        if (isLn && obj.endTime && obj.time > currentTimeMs && obj.endTime > currentTimeMs) {
+            const yT = Math.round(Math.max(pianoTop, pianoBottom - (Math.min(obj.endTime, windowEnd) - currentTimeMs) * scale));
+            const rawB = pianoBottom - (obj.time - currentTimeMs) * scale;
             const yB = Math.min(pianoBottom, rawB - (isCircle ? noteH / 2 : 0));
-            if (yB > yT) lnBodies.push({ col, yT: Math.round(yT), yB: Math.round(yB) });
+            if (yB > yT) lnBodies.push({ col, yT, yB });
         }
 
-        // LN 头部：若正在按住，固定在判定线位置；否则在判定线上方正常下落显示
-        if (isLn && obj.endTime && obj.endTime > currentTimeMs) {
-            if (obj.time <= currentTimeMs) {
-                // 按住中，头部贴在判定线上
-                heads.push({ col, y: pianoBottom });
-            } else if (obj.time <= windowEnd) {
-                const y = Math.round(pianoBottom - (obj.time - currentTimeMs) * scale);
-                if (y >= pianoTop - noteH && y <= pianoBottom + noteH) {
-                    heads.push({ col, y });
-                }
-            }
-        }
-
-        // 普通 note 头部
-        if (!isLn && obj.time > currentTimeMs && obj.time <= windowEnd) {
+        // LN 下落头部
+        if (isLn && obj.endTime && obj.time > currentTimeMs && obj.endTime > currentTimeMs) {
             const y = Math.round(pianoBottom - (obj.time - currentTimeMs) * scale);
             if (y >= pianoTop - noteH && y <= pianoBottom + noteH) {
                 heads.push({ col, y });
             }
         }
 
-        // LN 尾部方块模式：尾部在视野内且未过判定线
+        // 普通 note 头部（未过判定线才显示）
+        if (!isLn && obj.time > currentTimeMs) {
+            const y = Math.round(pianoBottom - (obj.time - currentTimeMs) * scale);
+            if (y >= pianoTop - noteH && y <= pianoBottom + noteH) {
+                heads.push({ col, y });
+            }
+        }
+
+        // LN 尾部方块模式
         if (!isCircle && isLn && obj.endTime && obj.endTime > currentTimeMs && obj.endTime < windowEnd) {
             const y = Math.round(pianoBottom - (obj.endTime - currentTimeMs) * scale);
             if (y >= pianoTop && y <= pianoBottom) {
                 lnTails.push({ col, y });
             }
         }
+    }
+
+    // ── 已按住的长条（开始时间 < windowStart，但仍需显示身体和头部） ──
+    for (const ln of hitIdx.lnEnds) {
+        if (ln.t > currentTimeMs) break;
+        if (ln.end <= currentTimeMs) continue;
+        const obj = objs[ln.idx];
+        const col = obj.x * colCount / 512 | 0;
+        if (col >= colCount) continue;
+
+        held[col] = true;
+
+        const yT = Math.round(Math.max(pianoTop, pianoBottom - (Math.min(obj.endTime, windowEnd) - currentTimeMs) * scale));
+        const yB = Math.min(pianoBottom, pianoBottom - (isCircle ? noteH / 2 : 0));
+        if (yB > yT) lnBodies.push({ col, yT, yB });
+
+        heads.push({ col, y: pianoBottom });
     }
 
     // LN 身体
@@ -330,92 +381,73 @@ function getSprite(key, w, h, drawFn) {
     return s;
 }
 
-function getCircleNoteSprite(color, d) {
-    return getSprite(`cn_${color}_${d}`, d, d, (c, w, h) => {
-        const r = w / 2;
-        const grad = c.createRadialGradient(w * 0.38, h * 0.35, 0, r, r, r);
-        grad.addColorStop(0, lighten(color, 0.38));
-        grad.addColorStop(0.55, color);
-        grad.addColorStop(1, darken(color, 0.6));
-        c.beginPath();
-        c.arc(r, r, r - 0.5, 0, Math.PI * 2);
-        c.fillStyle = grad;
-        c.fill();
-        c.strokeStyle = darken(color, 0.45);
-        c.lineWidth = 1;
-        c.stroke();
-        // 高光
-        c.beginPath();
-        c.arc(r * 0.78, r * 0.72, r * 0.32, 0, Math.PI * 2);
-        c.fillStyle = 'rgba(255,255,255,0.18)';
-        c.fill();
-    });
-}
-
-function getNoteSprite(color, w, h) {
-    return getSprite(`n_${color}_${w}_${h}`, w, h, (c, w, h) => {
-        const r = Math.min(4, h / 2, w / 2);
-        const g = c.createLinearGradient(0, 0, 0, h);
-        g.addColorStop(0, lighten(color, 0.25));
-        g.addColorStop(0.45, color);
-        g.addColorStop(1, darken(color, 0.72));
-        rr(c, 0.5, 0.5, w - 1, h - 1, r);
-        c.fillStyle = g;
-        c.fill();
-        c.strokeStyle = darken(color, 0.45);
-        c.lineWidth = 1;
-        c.stroke();
-        rr(c, 2, 1.5, w - 4, Math.max(2, h * 0.35), Math.min(3, r));
-        c.fillStyle = 'rgba(255,255,255,0.22)';
-        c.fill();
-    });
-}
-
-function getLnSprite(color, w) {
-    return getSprite(`ln_${color}_${w}`, w, 24, (c, w, h) => {
-        const g = c.createLinearGradient(0, 0, 0, h);
-        g.addColorStop(0, lighten(color, 0.15));
-        g.addColorStop(1, darken(color, 0.62));
-        c.fillStyle = g;
-        c.fillRect(0, 0, w, h);
-        c.fillStyle = darken(color, 0.45);
-        c.fillRect(0, 0, 1, h);
-        c.fillRect(w - 1, 0, 1, h);
-    });
-}
-
-// ── 无特效精灵（纯色，无高光/渐变） ──
-
-function getFlatNoteSprite(color, w, h) {
-    return getSprite(`fn_${color}_${w}_${h}`, w, h, (c, w, h) => {
-        const r = Math.min(4, h / 2, w / 2);
-        rr(c, 0.5, 0.5, w - 1, h - 1, r);
-        c.fillStyle = color;
-        c.fill();
-        c.strokeStyle = darken(color, 0.6);
-        c.lineWidth = 1;
-        c.stroke();
-    });
-}
-
-function getFlatCircleSprite(color, d) {
-    return getSprite(`fcn_${color}_${d}`, d, d, (c, w, h) => {
+function getCircleNoteSprite(color, d, flat) {
+    const pf = flat ? 'fcn_' : 'cn_';
+    return getSprite(`${pf}${color}_${d}`, d, d, (c, w, h) => {
         const r = w / 2;
         c.beginPath();
         c.arc(r, r, r - 0.5, 0, Math.PI * 2);
-        c.fillStyle = color;
+        if (flat) {
+            c.fillStyle = color;
+        } else {
+            const grad = c.createRadialGradient(w * 0.38, h * 0.35, 0, r, r, r);
+            grad.addColorStop(0, lighten(color, 0.38));
+            grad.addColorStop(0.55, color);
+            grad.addColorStop(1, darken(color, 0.6));
+            c.fillStyle = grad;
+        }
         c.fill();
-        c.strokeStyle = darken(color, 0.6);
+        c.strokeStyle = darken(color, flat ? 0.6 : 0.45);
         c.lineWidth = 1;
         c.stroke();
+        if (!flat) {
+            c.beginPath();
+            c.arc(r * 0.78, r * 0.72, r * 0.32, 0, Math.PI * 2);
+            c.fillStyle = 'rgba(255,255,255,0.18)';
+            c.fill();
+        }
     });
 }
 
-function getFlatLnSprite(color, w) {
-    return getSprite(`fln_${color}_${w}`, w, 24, (c, w, h) => {
-        c.fillStyle = color;
+function getNoteSprite(color, w, h, flat) {
+    const pf = flat ? 'fn_' : 'n_';
+    return getSprite(`${pf}${color}_${w}_${h}`, w, h, (c, w, h) => {
+        const r = Math.min(4, h / 2, w / 2);
+        rr(c, 0.5, 0.5, w - 1, h - 1, r);
+        if (flat) {
+            c.fillStyle = color;
+        } else {
+            const g = c.createLinearGradient(0, 0, 0, h);
+            g.addColorStop(0, lighten(color, 0.25));
+            g.addColorStop(0.45, color);
+            g.addColorStop(1, darken(color, 0.72));
+            c.fillStyle = g;
+        }
+        c.fill();
+        c.strokeStyle = darken(color, flat ? 0.6 : 0.45);
+        c.lineWidth = 1;
+        c.stroke();
+        if (!flat) {
+            rr(c, 2, 1.5, w - 4, Math.max(2, h * 0.35), Math.min(3, r));
+            c.fillStyle = 'rgba(255,255,255,0.22)';
+            c.fill();
+        }
+    });
+}
+
+function getLnSprite(color, w, flat) {
+    const pf = flat ? 'fln_' : 'ln_';
+    return getSprite(`${pf}${color}_${w}`, w, 24, (c, w, h) => {
+        if (flat) {
+            c.fillStyle = color;
+        } else {
+            const g = c.createLinearGradient(0, 0, 0, h);
+            g.addColorStop(0, lighten(color, 0.15));
+            g.addColorStop(1, darken(color, 0.62));
+            c.fillStyle = g;
+        }
         c.fillRect(1, 0, w - 2, h);
-        c.fillStyle = darken(color, 0.6);
+        c.fillStyle = darken(color, flat ? 0.6 : 0.45);
         c.fillRect(0, 0, 1, h);
         c.fillRect(w - 1, 0, 1, h);
     });

@@ -1,10 +1,12 @@
 import WebSocketManager from './js/socket.js';
-import { renderGameplayFrame, buildPianoLayout, buildRenderColors } from './js/preview_renderer.js';
+import { renderGameplayFrame, buildPianoLayout, buildRenderColors, buildHitIndex } from './js/preview_renderer.js';
 
 // ============ 常量 ============
 const STATE_MENU   = 0;
 const STATE_SELECT = 5;
 const BASE_MS_VISIBLE = 11485;
+
+const MODE_MAP = { 1: 'osu!taiko', 2: 'osu!catch', 3: 'osu!mania' };
 
 // ============ DOM ============
 const container = document.getElementById('preview-container');
@@ -43,6 +45,19 @@ const settings = {
 
 const log = (...a) => { if (settings.debugLog) console.log('[Preview]', ...a); };
 const err = (...a) => console.error('[Preview]', ...a);
+
+function applyColors() {
+    const { col1, col2, col3, col4, ln } = settings.colors;
+    cache.noteColors = [col1, col2, col3, col4];
+    cache.lnColors   = [ln, ln, ln, ln];
+}
+function rebuildLayoutAndColors() {
+    canvas.width  = settings.canvasWidth;
+    canvas.height = settings.canvasHeight;
+    applyColors();
+    cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
+    cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
+}
 
 // ============ WebSocket ============
 const socket = new WebSocketManager(window.location.host);
@@ -84,13 +99,7 @@ function applySettings(msg) {
 
     // 即时应用需要重建的设置（无需切换到下一首歌）
     if (needsRebuild && cache.bm) {
-        canvas.width  = settings.canvasWidth;
-        canvas.height = settings.canvasHeight;
-        const { col1, col2, col3, col4, ln } = settings.colors;
-        cache.noteColors = [col1, col2, col3, col4];
-        cache.lnColors   = [ln, ln, ln, ln];
-        cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
-        cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
+        rebuildLayoutAndColors();
         startAnimation();
     }
 }
@@ -154,7 +163,7 @@ function startAnimation() {
     cache.animStart = performance.now();
 
     (function frame(now) {
-        const currentTimeMs = startMs + (((now - cache.animStart) / 1000 * 1000) % dur);
+        const currentTimeMs = startMs + ((now - cache.animStart) % dur);
 
         renderGameplayFrame(canvas, bm, currentTimeMs, cache.layout, cache.renderColors, {
             visibleMs,
@@ -232,26 +241,22 @@ function parseOsuFileHits(content) {
     });
 
     // Difficulty
-    let cs = 4, hp = 5, od = 5, ar = 5;
+    let cs = 4;
     (sections['Difficulty'] || []).forEach(line => {
         const i = line.indexOf(':');
         if (i < 0) return;
-        const k = line.slice(0, i).trim(), v = parseFloat(line.slice(i + 1).trim());
-        if (k === 'CircleSize')          cs = Math.round(v) || 4;
-        else if (k === 'HPDrainRate')    hp = v || 5;
-        else if (k === 'OverallDifficulty') od = v || 5;
-        else if (k === 'ApproachRate')   ar = v || 5;
+        const k = line.slice(0, i).trim();
+        if (k === 'CircleSize') cs = Math.round(parseFloat(line.slice(i + 1).trim())) || 4;
     });
 
     // Metadata
-    let titleUnicode = '', artistUnicode = '', source = '';
+    let titleUnicode = '', artistUnicode = '';
     (sections['Metadata'] || []).forEach(line => {
         const i = line.indexOf(':');
         if (i < 0) return;
         const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim();
         if (k === 'TitleUnicode')  titleUnicode  = v;
         if (k === 'ArtistUnicode') artistUnicode = v;
-        if (k === 'Source')        source        = v;
     });
 
     // TimingPoints
@@ -278,20 +283,11 @@ function parseOsuFileHits(content) {
         type & 128 ? lnCount++ : noteCount++;
     });
 
-    const lastObj = hitObjects.length ? Math.max(...hitObjects.map(o => Math.max(o.time, o.endTime || 0))) : 0;
+    const lastObj = hitObjects.reduce((max, o) => Math.max(max, o.time, o.endTime || 0), 0);
     const durationMs = lastObj + 1000;
 
-    // BPM
-    const utps = timingPoints.filter(tp => !tp.inherited && tp.beatLength > 0);
-    const bpms = utps.map(tp => 60000 / tp.beatLength);
-    const sorted = bpms.slice().sort((a, b) => a - b);
-    const bpmMin = sorted[0] || 180;
-    const bpmMax = sorted[sorted.length - 1] || 180;
-
-    return { mode, circleSize: cs, previewTime, hp, od, ar,
-             titleUnicode, artistUnicode, source,
-             timingPoints, hitObjects,
-             bpmMin, bpmMax, noteCount, lnCount, durationMs };
+    return { mode, circleSize: cs, previewTime, titleUnicode, artistUnicode,
+             timingPoints, hitObjects, noteCount, lnCount, durationMs };
 }
 
 // ============ 加载谱面 ============
@@ -320,9 +316,7 @@ async function loadBeatmapPreview(data, sameSet = false) {
         const hits = parseOsuFileHits(osuText);
         const b = data.beatmap || {};
         const rawMode = b.mode ?? b.modeId ?? hits.mode;
-        const modeStr = typeof rawMode === 'number'
-            ? ({ 1: 'osu!taiko', 2: 'osu!catch', 3: 'osu!mania' }[rawMode] || 'osu!')
-            : String(rawMode || '');
+        const modeStr = MODE_MAP[rawMode] || 'osu!';
 
         cache.bm = {
             title: b.title || '', titleUnicode: hits.titleUnicode || b.titleUnicode || b.title || '',
@@ -332,8 +326,6 @@ async function loadBeatmapPreview(data, sameSet = false) {
             mode: rawMode, modeName: modeStr,
             keyCount: Number(hits.circleSize || b.stats?.cs) || 4,
             bpm: Number(b.stats?.bpm?.common) || 180,
-            hp: hits.hp, od: hits.od, ar: hits.ar, source: hits.source,
-            bpmMin: hits.bpmMin, bpmMax: hits.bpmMax,
             noteCount: hits.noteCount, lnCount: hits.lnCount, durationMs: hits.durationMs,
             timingPoints: hits.timingPoints, hitObjects: hits.hitObjects,
         };
@@ -342,6 +334,7 @@ async function loadBeatmapPreview(data, sameSet = false) {
         const utps = hits.timingPoints.filter(tp => !tp.inherited && tp.beatLength > 0);
         cache.bm._utpsCache = utps;
         cache.bm._beatSectsCache = buildBeatSections(utps, hits.durationMs);
+        cache.bm._hitIndex = buildHitIndex(hits.hitObjects);
 
         // 同曲不同难度：接着当前音频时间播放；否则从 PreviewTime 开始
         if (sameSet && cache.lastAudioTime > 0) {
@@ -351,9 +344,7 @@ async function loadBeatmapPreview(data, sameSet = false) {
             cache.previewTimeMs = hits.previewTime >= 0 ? hits.previewTime : 0;
         }
         cache.beatmapSetId = b.set || null;
-        const { col1, col2, col3, col4, ln } = settings.colors;
-        cache.noteColors = [col1, col2, col3, col4];
-        cache.lnColors   = [ln, ln, ln, ln];
+        applyColors();
 
         cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
         cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);

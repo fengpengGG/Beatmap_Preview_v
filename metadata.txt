@@ -1,6 +1,6 @@
 Usecase: ingame, obs-overlay
 Name: Beatmap Preview_video
-Version: 2.0.2
+Version: 2.1.0
 Author: fengpeng
 CompatibleWith: tosu
 Resolution: 300x600
