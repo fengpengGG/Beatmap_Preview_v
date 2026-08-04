@@ -4,12 +4,12 @@ osu!mania 谱面游玩预览插件，基于 [tosu](https://github.com/tosuapp/to
 
 ![Preview](https://i.ibb.co/Mkb3MHhr/2026-08-03-233857.png)
 
-[bilibili 视频演示](https://www.bilibili.com/video/BV1vgMo63EVE/#reply312131261872)
+[bilibili 视频演示](https://www.bilibili.com/video/BV1vgMo63EVE/?share_source=copy_web&vd_source=e15a111432beaef33a428139ce30945a)
 
 ## 功能
 
 - 选择歌曲时自动显示对应谱面的实时音符下落预览
-- 支持 1K ~ 10K+ 的多键模式，列宽自动适应
+- 支持 1K ~ 18K+ 的多键模式，列宽自动适应
 - 支持圆角方块 / 圆形两种音符样式
 - LN 长条实时动画，被按住后头部持续显示直到释放
 - 同一首歌切换不同难度时，预览时间连续不中断
@@ -76,5 +76,5 @@ A：由于目前的版本是直接从歌曲预览段开始播放的游玩预览�
 ## 致谢
 
 - [tosu](https://github.com/tosuapp/tosu) - osu! 内存读取与 WebSocket 服务
-
+- 
 碎碎念：石山来的
