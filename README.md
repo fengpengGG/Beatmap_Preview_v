@@ -4,6 +4,8 @@ osu!mania 谱面游玩预览插件，基于 [tosu](https://github.com/tosuapp/to
 
 ![Preview](https://i.ibb.co/Mkb3MHhr/2026-08-03-233857.png)
 
+[bilibili 视频演示](https://www.bilibili.com/video/BV1vgMo63EVE/#reply312131261872)
+
 ## 功能
 
 - 选择歌曲时自动显示对应谱面的实时音符下落预览
