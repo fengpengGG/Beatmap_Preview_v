@@ -3,15 +3,22 @@
  * Column widths auto-adapt for multi-key beatmaps.
  *
  * Exports:
- *   buildPianoLayout(canvasW, canvasH, colCount) → layout
+ *   buildPianoLayout(canvasW, canvasH, colCount, densityW) → layout
  *   buildRenderColors(noteColors, lnColors, colCount) → colors
  *   buildHitIndex(hitObjects) → { starts, ends, lnEnds }
+ *   buildDensityMap(hitObjects, durationMs, numBars) → density cache
  *   renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, opts)
  */
 
 // ── Layout constants ──
 const PAST_BUFFER_RATIO = 0.2;
 const HIT_FLASH_MS      = 140;
+
+// ── Density map ──
+const DENSITY_BG          = 'rgba(18,18,30,0.82)';
+const DENSITY_NORMAL      = '#42A5F5';  // 默认正常密度颜色（蓝）
+const DENSITY_HOT         = '#FF69B4';  // 默认达到显示上限的颜色（粉）
+const DENSITY_CURSOR      = '#ffffff';
 
 // ── Colors ──
 const COL_BG_EVEN = 'rgba(33,33,54,0.62)';
@@ -27,14 +34,16 @@ const FALLBACK = '#c8c8eb';
 //  预计算（歌曲加载时调用一次，不随帧变化）
 // ═══════════════════════════════════════════════════════════════
 
-export function buildPianoLayout(canvasW, canvasH, colCount) {
+export function buildPianoLayout(canvasW, canvasH, colCount, densityW = 0) {
     // 所有尺寸按比例计算，让轨道铺满预览区域
     const sidePad    = Math.max(4, Math.round(canvasW * 0.03));
-    const pianoMaxW  = canvasW - sidePad * 2;
+    // 开启密度图时，轨道整体右移让出左侧密度条区域
+    const leftPad    = sidePad + densityW + (densityW > 0 ? 5 : 0);
+    const pianoMaxW  = canvasW - leftPad - sidePad;
     const gap        = Math.max(2, Math.round(pianoMaxW * 0.012));
     const colW       = Math.floor((pianoMaxW - (colCount - 1) * gap) / colCount);
     const pianoW     = colCount * colW + (colCount - 1) * gap;
-    const pianoX     = Math.floor((canvasW - pianoW) / 2);
+    const pianoX     = leftPad + Math.floor((pianoMaxW - pianoW) / 2);
     const pianoTop   = Math.round(canvasH * 0.04);
     const judgeOff   = Math.max(20, Math.round(canvasH * 0.05));
     const pianoBottom = canvasH - judgeOff;
@@ -45,7 +54,12 @@ export function buildPianoLayout(canvasW, canvasH, colCount) {
     const barX       = Math.floor((canvasW - barW) / 2);
     const barY       = Math.round(canvasH - judgeOff * 0.6);
 
-    return { canvasW, canvasH, pianoW, pianoH, pianoX, pianoTop, pianoBottom, colW, nw, gap, topFadeH, barW, barX, barY };
+    // 密度图区域（画布左缘，与钢琴同高）
+    const densityX = densityW > 0 ? 0 : -1;
+    const densityTop = pianoTop;
+    const densityH = pianoH;
+
+    return { canvasW, canvasH, pianoW, pianoH, pianoX, pianoTop, pianoBottom, colW, nw, gap, topFadeH, barW, barX, barY, densityX, densityW, densityTop, densityH };
 }
 
 export function buildRenderColors(noteColors, lnColors, colCount) {
@@ -87,6 +101,26 @@ function bisectLeft(arr, t, key) {
     return lo;
 }
 
+/**
+ * 密度图预计算：将歌曲均分为 numBars 个等宽柱形（柱宽固定，不随歌长自适应）。
+ * 长按音符只统计开始时间（与 osu 编辑器密度统计一致，每 note 记一次）。
+ * 高度基准 maxCount = 全谱面最高窗口计数，柱高 = count/maxCount * 可用高度。
+ * 返回 { counts, maxCount, numBars, durationMs }
+ */
+export function buildDensityMap(hitObjects, durationMs, numBars) {
+    if (!hitObjects.length || durationMs <= 0) return null;
+    const nb = Math.max(1, numBars | 0);
+    const counts = new Array(nb).fill(0);
+    const span = durationMs / nb;  // 每个柱形代表的时间跨度
+    for (let i = 0; i < hitObjects.length; i++) {
+        const idx = Math.min(nb - 1, Math.max(0, (hitObjects[i].time / span) | 0));
+        counts[idx]++;
+    }
+    let maxCount = 0;
+    for (const c of counts) { if (c > maxCount) maxCount = c; }
+    return { counts, maxCount, numBars: nb, durationMs };
+}
+
 // ═══════════════════════════════════════════════════════════════
 
 export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, opts = {}) {
@@ -94,6 +128,7 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
         canvasW, canvasH, pianoW, pianoH,
         pianoX, pianoTop, pianoBottom, colW, nw, gap, topFadeH,
         barW, barX, barY,
+        densityX, densityW, densityTop, densityH,
     } = layout;
     const { noteCols, lnCols } = colors;
 
@@ -121,6 +156,14 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
     bgGrad.addColorStop(1, '#10101a');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // ── 密度图（轨道左侧） ──
+    if (densityW > 0) {
+        drawDensityMap(ctx, bm, currentTimeMs,
+            densityX, densityTop, densityW, densityH,
+            opts.densityStyle, opts.densityColor, opts.densityHotColor,
+            opts.densityFillLine, opts.densityFillAlpha);
+    }
 
     // ── 列背景 ──
     for (let ci = 0; ci < noteCols.length; ci++) {
@@ -456,6 +499,138 @@ function getLnSprite(color, w, flat) {
 // ═══════════════════════════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════════════════════════
+
+/**
+ * 绘制密度图（参考 osu 编辑器左侧密度示意图）。
+ * 竖向布局：时间从下到上递增（底部 = 歌开始，顶部 = 歌结束），
+ * 播放游标随音乐从底部移动到上面。
+ *  - style = 'bar'（默认直方图）：柱形（横条）厚度固定，数量 = 密度图高度 / 柱宽设置
+ *    （不随歌长自适应），横条长度 = count / maxCount * 可用宽度（归一化，最高密度满格）
+ *  - style = 'line'（折线图）：每个窗口中心取一个点，横向位置 = 归一化密度，
+ *    相邻点连线成曲线，达到显示上限的采样点用峰值颜色标记
+ *  - 达到显示上限（全谱面最高密度）→ 峰值颜色高亮，其余主题色（均可自定义）
+ *  - 白色游标指示当前播放位置
+ * @param {string} [normal] 正常密度颜色（默认 DENSITY_NORMAL）
+ * @param {string} [hot]    达到显示上限的颜色（默认 DENSITY_HOT）
+ */
+function drawDensityMap(ctx, bm, currentTimeMs, x, top, w, h,
+    style = 'bar', normal = DENSITY_NORMAL, hot = DENSITY_HOT,
+    fillLine = true, fillAlpha = 0.35) {
+    const dc = bm._densityCache;
+    if (!dc) return;
+
+    const { counts, maxCount, numBars, durationMs } = dc;
+    const pad = 2;  // 内边距
+    const innerW = Math.max(1, w - pad * 2);
+    const sliceH = h / numBars;
+    const bottom = top + h;
+    const invMax = maxCount > 0 ? 1 / maxCount : 0;
+
+    // 背景 + 圆角外框
+    ctx.save();
+    ctx.beginPath();
+    rr(ctx, x, top, w, h, 4);
+    ctx.fillStyle = DENSITY_BG;
+    ctx.fill();
+    ctx.clip();
+
+    if (style === 'line') {
+        // ── 折线图 ──
+        const pts = [];
+        for (let i = 0; i < numBars; i++) {
+            const px = x + pad + (counts[i] * invMax) * innerW;
+            const py = bottom - (i + 0.5) * sliceH;
+            pts.push({ px, py, hot: counts[i] >= maxCount });
+        }
+
+        // 曲线下方半透明纯色填充（按设置透明度）
+        if (fillLine && fillAlpha > 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + pad, bottom);
+            for (const p of pts) ctx.lineTo(p.px, p.py);
+            ctx.lineTo(x + pad, bottom);
+            ctx.closePath();
+            ctx.fillStyle = hexA(normal, fillAlpha);
+            ctx.fill();
+        }
+
+        // 外层深色描边
+        ctx.strokeStyle = darken(normal, 0.55);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].px, pts[0].py);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].px, pts[i].py);
+        ctx.stroke();
+
+        // 主折线（主题色）
+        ctx.strokeStyle = normal;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pts[0].px, pts[0].py);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].px, pts[i].py);
+        ctx.stroke();
+
+        // 达到显示上限的采样点 → 峰值颜色（带发光）
+        for (const p of pts) {
+            if (!p.hot) continue;
+            ctx.shadowColor = hot;
+            ctx.shadowBlur = 5;
+            ctx.fillStyle = hot;
+            ctx.beginPath();
+            ctx.arc(p.px, p.py, 2.25, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+    } else {
+        // ── 直方图（默认） ──
+        for (let i = 0; i < numBars; i++) {
+            const y    = bottom - (i + 1) * sliceH;
+            const ratio = counts[i] * invMax;
+            const barW = ratio * innerW;
+            if (barW <= 0) continue;
+
+            const hotBar = counts[i] >= maxCount;
+            const barGrad = ctx.createLinearGradient(x + pad, y, x + pad + barW, y);
+            barGrad.addColorStop(0, hotBar ? hot : normal);
+            barGrad.addColorStop(1, hotBar ? lighten(hot, 0.35) : lighten(normal, 0.4));
+
+            ctx.fillStyle = barGrad;
+            ctx.globalAlpha = hotBar ? 0.92 : 0.75;
+            const bh = Math.max(1, sliceH - 1);
+            rr(ctx, x + pad, y, barW, bh, Math.min(2, bh / 2));
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // 峰值条右端加细白边
+            if (hotBar) {
+                ctx.fillStyle = 'rgba(255,255,255,0.55)';
+                ctx.fillRect(x + pad + barW - 1, y + 1, 1, bh - 2);
+            }
+        }
+    }
+
+    // 当前时间游标（水平亮线 + 发光 + 右端三角）
+    if (durationMs > 0) {
+        const pct = Math.min(Math.max(currentTimeMs / durationMs, 0), 1);
+        const cy  = bottom - pct * h;
+        ctx.shadowColor = DENSITY_CURSOR;
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = DENSITY_CURSOR;
+        ctx.fillRect(x + pad, cy - 0.5, innerW, 1.5);
+        ctx.shadowBlur = 0;
+
+        ctx.beginPath();
+        ctx.moveTo(x + w - 1, cy - 3.5);
+        ctx.lineTo(x + w - 1, cy + 3.5);
+        ctx.lineTo(x + w - 5, cy);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
 
 function rr(c, x, y, w, h, r) {
     c.beginPath();

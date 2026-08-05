@@ -1,5 +1,5 @@
 import WebSocketManager from './js/socket.js';
-import { renderGameplayFrame, buildPianoLayout, buildRenderColors, buildHitIndex } from './js/preview_renderer.js';
+import { renderGameplayFrame, buildPianoLayout, buildRenderColors, buildHitIndex, buildDensityMap } from './js/preview_renderer.js';
 
 // ============ 常量 ============
 const STATE_MENU   = 0;
@@ -40,6 +40,14 @@ const settings = {
     showJudgmentLine: true,
     noteStyle: false,
     noteEffects: true,
+    showDensityMap: true,
+    densityWidth: 60,
+    densityBarWidth: 3,
+    densityStyle: 'bar',
+    densityColor: '#42A5F5',
+    densityHotColor: '#FF69B4',
+    densityFillLine: true,
+    densityFillAlpha: 0.35,
     colors: { col1: '#c8c8eb', col2: '#c8c8eb', col3: '#c8c8eb', col4: '#c8c8eb', ln: '#9696c3' },
 };
 
@@ -51,12 +59,21 @@ function applyColors() {
     cache.noteColors = [col1, col2, col3, col4];
     cache.lnColors   = [ln, ln, ln, ln];
 }
+/** 重建密度图缓存：柱形（横条）厚度固定，数量 = 密度图高度 / 柱宽设置（纵轴时间比例） */
+function refreshDensity() {
+    if (!cache.bm || !cache.layout) return;
+    const numBars = Math.max(1, Math.floor(cache.layout.densityH / Math.max(1, settings.densityBarWidth)));
+    cache.bm._densityCache = buildDensityMap(cache.bm.hitObjects, cache.bm.durationMs, numBars);
+}
+
 function rebuildLayoutAndColors() {
     canvas.width  = settings.canvasWidth;
     canvas.height = settings.canvasHeight;
     applyColors();
-    cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
+    cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount,
+        settings.showDensityMap ? settings.densityWidth : 0);
     cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
+    refreshDensity();
 }
 
 // ============ WebSocket ============
@@ -77,7 +94,7 @@ function applySettings(msg) {
     const num = (v, d) => Math.max(1, parseInt(v) || d);
 
     // 需要重建 layout / colors / 动画的设置
-    const layoutKeys = ['canvasWidth', 'canvasHeight', 'speed'];
+    const layoutKeys = ['canvasWidth', 'canvasHeight', 'speed', 'showDensityMap', 'densityWidth', 'densityBarWidth', 'densityStyle'];
     const colorKeys  = ['col1Color', 'col2Color', 'col3Color', 'col4Color', 'lnColor'];
     const needsRebuild = [...layoutKeys, ...colorKeys].some(k => msg[k] !== undefined);
 
@@ -95,6 +112,19 @@ function applySettings(msg) {
     if (msg.showJudgmentLine !== undefined) settings.showJudgmentLine = msg.showJudgmentLine;
     if (msg.noteStyle        !== undefined) settings.noteStyle        = msg.noteStyle;
     if (msg.noteEffects      !== undefined) settings.noteEffects      = msg.noteEffects;
+    if (msg.showDensityMap   !== undefined) settings.showDensityMap   = msg.showDensityMap;
+    if (msg.densityWidth     !== undefined) settings.densityWidth     = Math.max(10, Math.min(200, num(msg.densityWidth, 60)));
+    if (msg.densityBarWidth  !== undefined) settings.densityBarWidth  = Math.max(1, Math.min(20, num(msg.densityBarWidth, 3)));
+    if (msg.densityStyle     !== undefined) {
+        settings.densityStyle = (msg.densityStyle === '折线图' || msg.densityStyle === 'line') ? 'line' : 'bar';
+    }
+    if (msg.densityColor     !== undefined) settings.densityColor     = msg.densityColor;
+    if (msg.densityHotColor  !== undefined) settings.densityHotColor  = msg.densityHotColor;
+    if (msg.densityFillLine  !== undefined) settings.densityFillLine  = msg.densityFillLine;
+    if (msg.densityFillAlpha !== undefined) {
+        const raw = parseFloat(msg.densityFillAlpha) || 0.35;
+        settings.densityFillAlpha = Math.max(0, Math.min(1, raw > 1 ? raw / 100 : raw));
+    }
     log('Settings applied', settings);
 
     // 即时应用需要重建的设置（无需切换到下一首歌）
@@ -171,6 +201,11 @@ function startAnimation() {
             showJudgmentLine: settings.showJudgmentLine,
             noteStyle: settings.noteStyle,
             noteEffects: settings.noteEffects,
+            densityStyle: settings.densityStyle,
+            densityColor: settings.densityColor,
+            densityHotColor: settings.densityHotColor,
+            densityFillLine: settings.densityFillLine,
+            densityFillAlpha: settings.densityFillAlpha,
         });
         drawInfoBar();
         cache.animId = requestAnimationFrame(frame);
@@ -185,8 +220,8 @@ function drawInfoBar() {
     const barH = layout.pianoTop;  // 与钢琴顶部对齐
 
     const g = ctx.createLinearGradient(0, 0, 0, barH);
-    g.addColorStop(0, 'rgba(26,26,40,0.95)');
-    g.addColorStop(1, 'rgba(18,18,28,0.95)');
+    g.addColorStop(0, '#1a1a28');
+    g.addColorStop(1, '#12121c');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, barH);
 
@@ -346,8 +381,10 @@ async function loadBeatmapPreview(data, sameSet = false) {
         cache.beatmapSetId = b.set || null;
         applyColors();
 
-        cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount);
+        cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount,
+            settings.showDensityMap ? settings.densityWidth : 0);
         cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
+        refreshDensity();
 
         log('Playing:', cache.bm.title, `${cache.bm.keyCount}K preview=${cache.previewTimeMs}ms size=${canvas.width}x${canvas.height}`);
 
