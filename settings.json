@@ -32,12 +32,12 @@
         "value": true
     },
     {
-        "uniqueID": "showDensityMap",
-        "type": "checkbox",
-        "title": "显示密度图",
-        "description": "轨道左侧显示谱面密度分布图，蓝色 = 正常密度，粉色 = 达到显示上限（默认开启）",
-        "options": "",
-        "value": true
+        "uniqueID": "densityMode",
+        "type": "options",
+        "title": "密度图",
+        "description": "关闭 = 不显示密度图，直方图（横条）/ 折线图（曲线）两种显示样式",
+        "options": ["关闭", "直方图", "折线图"],
+        "value": "直方图"
     },
     {
         "uniqueID": "densityWidth",
@@ -50,18 +50,18 @@
     {
         "uniqueID": "densityBarWidth",
         "type": "number",
-        "title": "密度柱宽度",
+        "title": "直方图柱宽度",
         "description": "每个密度柱（横条）的固定厚度（px）,修改纵轴（时间轴）的比例，默认 5",
         "options": "",
         "value": 5
     },
     {
-        "uniqueID": "densityStyle",
-        "type": "options",
-        "title": "密度图样式",
-        "description": "选择密度图的显示样式：直方图（横条）或折线图（曲线）",
-        "options": ["直方图", "折线图"],
-        "value": "直方图"
+        "uniqueID": "densityLineFill",
+        "type": "checkbox",
+        "title": "折线图填充",
+        "description": "开启后折线图下方会显示半透明的纯色填充（跟随密度图颜色）",
+        "options": "",
+        "value": true
     },
     {
         "uniqueID": "densityColor",
@@ -78,22 +78,6 @@
         "description": "达到显示上限（全谱面最高密度）时的颜色（默认粉色）",
         "options": "",
         "value": "#FF69B4"
-    },
-    {
-        "uniqueID": "densityFillLine",
-        "type": "checkbox",
-        "title": "折线图填充",
-        "description": "开启后折线图下方会显示半透明填充区域，关闭后只显示折线",
-        "options": "",
-        "value": true
-    },
-    {
-        "uniqueID": "densityFillAlpha",
-        "type": "number",
-        "title": "折线图填充透明度",
-        "description": "折线图下方填充区域的不透明度，0 = 完全透明，100 = 不透明，默认 35",
-        "options": "",
-        "value": 35
     },
     {
         "uniqueID": "noteStyle",

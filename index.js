@@ -40,14 +40,12 @@ const settings = {
     showJudgmentLine: true,
     noteStyle: false,
     noteEffects: true,
-    showDensityMap: true,
+    densityMode: 'bar',   // 'none' / 'bar' / 'line'
     densityWidth: 60,
     densityBarWidth: 3,
-    densityStyle: 'bar',
+    densityLineFill: true,
     densityColor: '#42A5F5',
     densityHotColor: '#FF69B4',
-    densityFillLine: true,
-    densityFillAlpha: 0.35,
     colors: { col1: '#c8c8eb', col2: '#c8c8eb', col3: '#c8c8eb', col4: '#c8c8eb', ln: '#9696c3' },
 };
 
@@ -71,7 +69,7 @@ function rebuildLayoutAndColors() {
     canvas.height = settings.canvasHeight;
     applyColors();
     cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount,
-        settings.showDensityMap ? settings.densityWidth : 0);
+        settings.densityMode !== 'none' ? settings.densityWidth : 0);
     cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
     refreshDensity();
 }
@@ -94,7 +92,7 @@ function applySettings(msg) {
     const num = (v, d) => Math.max(1, parseInt(v) || d);
 
     // 需要重建 layout / colors / 动画的设置
-    const layoutKeys = ['canvasWidth', 'canvasHeight', 'speed', 'showDensityMap', 'densityWidth', 'densityBarWidth', 'densityStyle'];
+    const layoutKeys = ['canvasWidth', 'canvasHeight', 'speed', 'densityMode', 'densityWidth', 'densityBarWidth'];
     const colorKeys  = ['col1Color', 'col2Color', 'col3Color', 'col4Color', 'lnColor'];
     const needsRebuild = [...layoutKeys, ...colorKeys].some(k => msg[k] !== undefined);
 
@@ -112,19 +110,15 @@ function applySettings(msg) {
     if (msg.showJudgmentLine !== undefined) settings.showJudgmentLine = msg.showJudgmentLine;
     if (msg.noteStyle        !== undefined) settings.noteStyle        = msg.noteStyle;
     if (msg.noteEffects      !== undefined) settings.noteEffects      = msg.noteEffects;
-    if (msg.showDensityMap   !== undefined) settings.showDensityMap   = msg.showDensityMap;
-    if (msg.densityWidth     !== undefined) settings.densityWidth     = Math.max(10, Math.min(200, num(msg.densityWidth, 60)));
-    if (msg.densityBarWidth  !== undefined) settings.densityBarWidth  = Math.max(1, Math.min(20, num(msg.densityBarWidth, 3)));
-    if (msg.densityStyle     !== undefined) {
-        settings.densityStyle = (msg.densityStyle === '折线图' || msg.densityStyle === 'line') ? 'line' : 'bar';
+    if (msg.densityMode     !== undefined) {
+        settings.densityMode = (msg.densityMode === '关闭' || msg.densityMode === 'none') ? 'none'
+            : (msg.densityMode === '折线图' || msg.densityMode === 'line') ? 'line' : 'bar';
     }
+    if (msg.densityWidth    !== undefined) settings.densityWidth    = Math.max(10, Math.min(200, num(msg.densityWidth, 60)));
+    if (msg.densityBarWidth !== undefined) settings.densityBarWidth = Math.max(1, Math.min(20, num(msg.densityBarWidth, 3)));
+    if (msg.densityLineFill  !== undefined) settings.densityLineFill  = msg.densityLineFill;
     if (msg.densityColor     !== undefined) settings.densityColor     = msg.densityColor;
     if (msg.densityHotColor  !== undefined) settings.densityHotColor  = msg.densityHotColor;
-    if (msg.densityFillLine  !== undefined) settings.densityFillLine  = msg.densityFillLine;
-    if (msg.densityFillAlpha !== undefined) {
-        const raw = parseFloat(msg.densityFillAlpha) || 0.35;
-        settings.densityFillAlpha = Math.max(0, Math.min(1, raw > 1 ? raw / 100 : raw));
-    }
     log('Settings applied', settings);
 
     // 即时应用需要重建的设置（无需切换到下一首歌）
@@ -201,11 +195,10 @@ function startAnimation() {
             showJudgmentLine: settings.showJudgmentLine,
             noteStyle: settings.noteStyle,
             noteEffects: settings.noteEffects,
-            densityStyle: settings.densityStyle,
+            densityStyle: settings.densityMode === 'line' ? 'line' : 'bar',
+            densityLineFill: settings.densityLineFill,
             densityColor: settings.densityColor,
             densityHotColor: settings.densityHotColor,
-            densityFillLine: settings.densityFillLine,
-            densityFillAlpha: settings.densityFillAlpha,
         });
         drawInfoBar();
         cache.animId = requestAnimationFrame(frame);

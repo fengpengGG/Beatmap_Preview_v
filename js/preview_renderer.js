@@ -161,8 +161,7 @@ export function renderGameplayFrame(canvas, bm, currentTimeMs, layout, colors, o
     if (densityW > 0) {
         drawDensityMap(ctx, bm, currentTimeMs,
             densityX, densityTop, densityW, densityH,
-            opts.densityStyle, opts.densityColor, opts.densityHotColor,
-            opts.densityFillLine, opts.densityFillAlpha);
+            opts.densityStyle, opts.densityLineFill, opts.densityColor, opts.densityHotColor);
     }
 
     // ── 列背景 ──
@@ -510,12 +509,11 @@ function getLnSprite(color, w, flat) {
  *    相邻点连线成曲线，达到显示上限的采样点用峰值颜色标记
  *  - 达到显示上限（全谱面最高密度）→ 峰值颜色高亮，其余主题色（均可自定义）
  *  - 白色游标指示当前播放位置
- * @param {string} [normal] 正常密度颜色（默认 DENSITY_NORMAL）
- * @param {string} [hot]    达到显示上限的颜色（默认 DENSITY_HOT）
+ * @param {boolean} [lineFill] 折线图是否开启下方半透明填充（默认 true）
+ * @param {string}  [normal]   正常密度颜色（默认 DENSITY_NORMAL）
+ * @param {string}  [hot]      达到显示上限的颜色（默认 DENSITY_HOT）
  */
-function drawDensityMap(ctx, bm, currentTimeMs, x, top, w, h,
-    style = 'bar', normal = DENSITY_NORMAL, hot = DENSITY_HOT,
-    fillLine = true, fillAlpha = 0.35) {
+function drawDensityMap(ctx, bm, currentTimeMs, x, top, w, h, style = 'bar', lineFill = true, normal = DENSITY_NORMAL, hot = DENSITY_HOT) {
     const dc = bm._densityCache;
     if (!dc) return;
 
@@ -543,14 +541,14 @@ function drawDensityMap(ctx, bm, currentTimeMs, x, top, w, h,
             pts.push({ px, py, hot: counts[i] >= maxCount });
         }
 
-        // 曲线下方半透明纯色填充（按设置透明度）
-        if (fillLine && fillAlpha > 0) {
+        // 折线下方半透明纯色填充（时间轴 x = pad 与折线围成的区域）
+        if (lineFill) {
             ctx.beginPath();
             ctx.moveTo(x + pad, bottom);
             for (const p of pts) ctx.lineTo(p.px, p.py);
-            ctx.lineTo(x + pad, bottom);
+            ctx.lineTo(x + pad, pts[pts.length - 1].py);
             ctx.closePath();
-            ctx.fillStyle = hexA(normal, fillAlpha);
+            ctx.fillStyle = hexA(normal, 0.22);
             ctx.fill();
         }
 
