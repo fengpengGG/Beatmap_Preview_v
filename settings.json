@@ -37,7 +37,7 @@
         "title": "密度图",
         "description": "关闭 = 不显示密度图，直方图（横条）/ 折线图（曲线）两种显示样式",
         "options": ["关闭", "直方图", "折线图"],
-        "value": "直方图"
+        "value": "折线图"
     },
     {
         "uniqueID": "densityWidth",

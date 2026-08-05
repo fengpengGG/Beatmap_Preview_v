@@ -375,7 +375,7 @@ async function loadBeatmapPreview(data, sameSet = false) {
         applyColors();
 
         cache.layout = buildPianoLayout(canvas.width, canvas.height, cache.bm.keyCount,
-            settings.showDensityMap ? settings.densityWidth : 0);
+            settings.densityMode !== 'none' ? settings.densityWidth : 0);
         cache.renderColors = buildRenderColors(cache.noteColors, cache.lnColors, cache.bm.keyCount);
         refreshDensity();
 
